@@ -1,0 +1,465 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DoH 代理测试</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+
+        .container {
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            padding: 40px;
+            max-width: 600px;
+            width: 100%;
+        }
+
+        h1 {
+            color: #333;
+            margin-bottom: 10px;
+            font-size: 28px;
+        }
+
+        .subtitle {
+            color: #666;
+            margin-bottom: 30px;
+            font-size: 14px;
+        }
+
+        .input-group {
+            margin-bottom: 20px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 8px;
+            color: #555;
+            font-weight: 500;
+        }
+
+        input {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 14px;
+            transition: border-color 0.3s;
+        }
+
+        input:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        button {
+            width: 100%;
+            padding: 14px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 20px rgba(102, 126, 234, 0.4);
+        }
+
+        button:active {
+            transform: translateY(0);
+        }
+
+        button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .result {
+            margin-top: 30px;
+            padding: 20px;
+            background: #f5f5f5;
+            border-radius: 8px;
+            display: none;
+        }
+
+        .result.show {
+            display: block;
+            animation: slideIn 0.3s ease;
+        }
+
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateY(-10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .result h3 {
+            color: #333;
+            margin-bottom: 15px;
+            font-size: 18px;
+        }
+
+        .result-item {
+            padding: 10px;
+            background: white;
+            border-radius: 6px;
+            margin-bottom: 10px;
+            border-left: 4px solid #667eea;
+        }
+
+        .result-item:last-child {
+            margin-bottom: 0;
+        }
+
+        .result-label {
+            font-weight: 600;
+            color: #667eea;
+            margin-right: 8px;
+        }
+
+        .result-value {
+            color: #333;
+            word-break: break-all;
+        }
+
+        .error {
+            color: #d32f2f;
+            border-left-color: #d32f2f;
+        }
+
+        .success {
+            color: #388e3c;
+        }
+
+        .spinner {
+            display: inline-block;
+            width: 14px;
+            height: 14px;
+            border: 2px solid #f3f3f3;
+            border-top: 2px solid #667eea;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-right: 8px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .methods {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+
+        .method-btn {
+            flex: 1;
+            padding: 10px;
+            background: #f5f5f5;
+            color: #666;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .method-btn.active {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border-color: #667eea;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🚀 DoH 代理测试工具</h1>
+        <p class="subtitle">RFC 8484 标准 DNS-over-HTTPS 查询</p>
+
+        <div class="methods">
+            <button class="method-btn active" onclick="setMethod('GET')">GET 请求</button>
+            <button class="method-btn" onclick="setMethod('POST')">POST 请求</button>
+        </div>
+
+        <div class="input-group">
+            <label for="domain">域名查询</label>
+            <input type="text" id="domain" placeholder="例如: google.com" value="google.com">
+        </div>
+
+        <div class="input-group">
+            <label for="type">记录类型</label>
+            <input type="text" id="type" placeholder="A, AAAA, CNAME, MX, TXT 等" value="A">
+        </div>
+
+        <button onclick="queryDNS()" id="queryBtn">🔍 开始查询</button>
+
+        <div class="result" id="result"></div>
+    </div>
+
+    <script>
+        let currentMethod = 'GET';
+
+        function setMethod(method) {
+            currentMethod = method;
+            document.querySelectorAll('.method-btn').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            event.target.classList.add('active');
+        }
+
+        async function queryDNS() {
+            const domain = document.getElementById('domain').value.trim();
+            const type = document.getElementById('type').value.trim().toUpperCase();
+            const resultDiv = document.getElementById('result');
+            const queryBtn = document.getElementById('queryBtn');
+
+            if (!domain) {
+                showResult('错误', '请输入域名', true);
+                return;
+            }
+
+            queryBtn.disabled = true;
+            queryBtn.innerHTML = '<span class="spinner"></span>查询中...';
+
+            try {
+                const startTime = performance.now();
+
+                // Build DNS query
+                const dnsQuery = buildDNSQuery(domain, type);
+
+                let response;
+                if (currentMethod === 'GET') {
+                    // GET method with base64url encoded dns parameter
+                    const encodedQuery = base64urlEncode(dnsQuery);
+                    response = await fetch(`/dns-query?dns=${encodedQuery}`, {
+                        method: 'GET',
+                        headers: {
+                            'Accept': 'application/dns-message'
+                        }
+                    });
+                } else {
+                    // POST method with binary body
+                    response = await fetch('/dns-query', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/dns-message',
+                            'Accept': 'application/dns-message'
+                        },
+                        body: dnsQuery
+                    });
+                }
+
+                const endTime = performance.now();
+                const latency = Math.round(endTime - startTime);
+
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+
+                const dnsResponse = await response.arrayBuffer();
+                const parsedResponse = parseDNSResponse(new Uint8Array(dnsResponse));
+
+                // Get headers
+                const upstream = response.headers.get('X-Upstream') || '未知';
+                const cache = response.headers.get('X-Cache') || '未知';
+
+                displayResults(parsedResponse, latency, upstream, cache, currentMethod);
+
+            } catch (error) {
+                showResult('查询失败', error.message, true);
+            } finally {
+                queryBtn.disabled = false;
+                queryBtn.innerHTML = '🔍 开始查询';
+            }
+        }
+
+        function showResult(title, message, isError = false) {
+            const resultDiv = document.getElementById('result');
+            resultDiv.innerHTML = `
+                <div class="result-item ${isError ? 'error' : 'success'}">
+                    <span class="result-label">${title}:</span>
+                    <span class="result-value">${message}</span>
+                </div>
+            `;
+            resultDiv.classList.add('show');
+        }
+
+        function displayResults(parsedResponse, latency, upstream, cache, method) {
+            const resultDiv = document.getElementById('result');
+
+            let html = '<h3>✅ 查询结果</h3>';
+
+            html += `
+                <div class="result-item">
+                    <span class="result-label">请求方法:</span>
+                    <span class="result-value">${method}</span>
+                </div>
+                <div class="result-item">
+                    <span class="result-label">响应时间:</span>
+                    <span class="result-value">${latency} ms</span>
+                </div>
+                <div class="result-item">
+                    <span class="result-label">上游服务器:</span>
+                    <span class="result-value">${upstream}</span>
+                </div>
+                <div class="result-item">
+                    <span class="result-label">缓存状态:</span>
+                    <span class="result-value">${cache}</span>
+                </div>
+            `;
+
+            if (parsedResponse.answers && parsedResponse.answers.length > 0) {
+                html += '<div class="result-item">';
+                html += '<span class="result-label">DNS 记录:</span>';
+                html += '<div style="margin-top: 8px;">';
+                parsedResponse.answers.forEach(answer => {
+                    html += `<div style="padding: 6px 0; color: #333;">• ${answer}</div>`;
+                });
+                html += '</div></div>';
+            } else {
+                html += '<div class="result-item"><span class="result-value">未找到 DNS 记录</span></div>';
+            }
+
+            resultDiv.innerHTML = html;
+            resultDiv.classList.add('show');
+        }
+
+        function buildDNSQuery(domain, type) {
+            // Simple DNS query builder (simplified version)
+            const encoder = new TextEncoder();
+
+            // DNS query structure
+            const id = Math.floor(Math.random() * 65535);
+            const flags = 0x0100; // Standard query with recursion desired
+
+            // Type mapping
+            const types = { 'A': 1, 'AAAA': 28, 'CNAME': 5, 'MX': 15, 'TXT': 16, 'NS': 2, 'SOA': 6 };
+            const qtype = types[type] || 1;
+
+            // Build query
+            const parts = domain.split('.');
+            let query = new Uint8Array(512);
+            let offset = 0;
+
+            // Header
+            query[offset++] = (id >> 8) & 0xFF;
+            query[offset++] = id & 0xFF;
+            query[offset++] = (flags >> 8) & 0xFF;
+            query[offset++] = flags & 0xFF;
+            query[offset++] = 0; query[offset++] = 1; // QDCOUNT
+            query[offset++] = 0; query[offset++] = 0; // ANCOUNT
+            query[offset++] = 0; query[offset++] = 0; // NSCOUNT
+            query[offset++] = 0; query[offset++] = 0; // ARCOUNT
+
+            // Question section
+            parts.forEach(part => {
+                query[offset++] = part.length;
+                const bytes = encoder.encode(part);
+                query.set(bytes, offset);
+                offset += bytes.length;
+            });
+            query[offset++] = 0; // End of domain name
+
+            query[offset++] = (qtype >> 8) & 0xFF;
+            query[offset++] = qtype & 0xFF;
+            query[offset++] = 0; query[offset++] = 1; // QCLASS (IN)
+
+            return query.slice(0, offset);
+        }
+
+        function parseDNSResponse(data) {
+            // Simplified DNS response parser
+            const answers = [];
+
+            // Skip header (12 bytes)
+            let offset = 12;
+
+            // Skip question section
+            while (data[offset] !== 0) {
+                offset += data[offset] + 1;
+            }
+            offset += 5; // Skip null byte + QTYPE + QCLASS
+
+            // Parse answer section
+            const ancount = (data[6] << 8) | data[7];
+
+            for (let i = 0; i < ancount && offset < data.length; i++) {
+                // Skip name (usually pointer)
+                if ((data[offset] & 0xC0) === 0xC0) {
+                    offset += 2;
+                } else {
+                    while (data[offset] !== 0) offset++;
+                    offset++;
+                }
+
+                const type = (data[offset] << 8) | data[offset + 1];
+                offset += 8; // Skip TYPE, CLASS, TTL
+                const rdlength = (data[offset] << 8) | data[offset + 1];
+                offset += 2;
+
+                if (type === 1 && rdlength === 4) {
+                    // A record
+                    const ip = `${data[offset]}.${data[offset+1]}.${data[offset+2]}.${data[offset+3]}`;
+                    answers.push(`A: ${ip}`);
+                } else if (type === 28 && rdlength === 16) {
+                    // AAAA record
+                    let ipv6 = '';
+                    for (let j = 0; j < 16; j += 2) {
+                        if (j > 0) ipv6 += ':';
+                        ipv6 += ((data[offset + j] << 8) | data[offset + j + 1]).toString(16);
+                    }
+                    answers.push(`AAAA: ${ipv6}`);
+                }
+
+                offset += rdlength;
+            }
+
+            return { answers };
+        }
+
+        function base64urlEncode(buffer) {
+            const bytes = new Uint8Array(buffer);
+            let binary = '';
+            for (let i = 0; i < bytes.length; i++) {
+                binary += String.fromCharCode(bytes[i]);
+            }
+            const base64 = btoa(binary);
+            return base64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
+        }
+
+        // Allow Enter key to submit
+        document.getElementById('domain').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') queryDNS();
+        });
+        document.getElementById('type').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') queryDNS();
+        });
+    </script>
+</body>
+</html>
